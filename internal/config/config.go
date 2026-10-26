@@ -26,6 +26,7 @@ type PanelConfig struct {
 	Obfs         bool              `json:"obfs"`
 	ObfsPassword string            `json:"obfsPassword"`
 	Masquerade   string            `json:"masquerade"`
+	SNI          string            `json:"sni,omitempty"`
 	Users        map[string]string `json:"users"`
 }
 

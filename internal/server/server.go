@@ -390,7 +390,17 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 
 // BuildLink renders the hysteria2:// share URI for a user.
 // Format: hysteria2://user:pass@host:port?obfs=salamander&obfs-password=..&sni=..#name
+// SNI defaults to the link host (домен серта сервера); masquerade — это то,
+// на что сервер отвечает для чужих TLS-запросов, не связано с SNI подключения.
+// sniOverride, если не пусто, перебивает (например, при разделении SNI/хоста).
 func BuildLink(user, pass, host string, pc *config.PanelConfig) string {
+	sni := host
+	if i := strings.IndexByte(host, ':'); i >= 0 { // strip port if any
+		sni = host[:i]
+	}
+	if pc.SNI != "" {
+		sni = pc.SNI
+	}
 	var b strings.Builder
 	b.WriteString("hysteria2://")
 	b.WriteString(urlQueryEscape(user))
@@ -400,7 +410,7 @@ func BuildLink(user, pass, host string, pc *config.PanelConfig) string {
 	b.WriteString(host)
 	b.WriteByte(':')
 	b.WriteString(strconv.Itoa(pc.Port))
-	params := []string{"sni=" + urlQueryEscape(sniFromMasquerade(pc.Masquerade))}
+	params := []string{"sni=" + urlQueryEscape(sni)}
 	if pc.Obfs && pc.ObfsPassword != "" {
 		params = append(params, "obfs=salamander", "obfs-password="+urlQueryEscape(pc.ObfsPassword))
 	}
@@ -409,19 +419,6 @@ func BuildLink(user, pass, host string, pc *config.PanelConfig) string {
 	b.WriteByte('#')
 	b.WriteString(urlQueryEscape(user))
 	return b.String()
-}
-
-// sniFromMasquerade extracts a hostname-ish SNI from the masquerade URL.
-func sniFromMasquerade(m string) string {
-	m = strings.TrimPrefix(m, "https://")
-	m = strings.TrimPrefix(m, "http://")
-	if i := strings.IndexByte(m, '/'); i >= 0 {
-		m = m[:i]
-	}
-	if m == "" {
-		return "bing.com"
-	}
-	return m
 }
 
 func urlQueryEscape(s string) string {

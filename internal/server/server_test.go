@@ -283,17 +283,19 @@ func TestBuildLinkEscapes(t *testing.T) {
 	}
 }
 
-func TestSniFromMasquerade(t *testing.T) {
-	cases := map[string]string{
-		"https://news.site/path?q=1": "news.site",
-		"http://h.org":               "h.org",
-		"plain.com/xyz":              "plain.com",
-		"":                           "bing.com",
+func TestSniDefaultsToHost(t *testing.T) {
+	pc := &config.PanelConfig{Port: 443, Obfs: false, Masquerade: "https://news.site/x"}
+	link := BuildLink("u", "p", "vpn.example.com", pc)
+	if !strings.Contains(link, "sni=vpn.example.com") {
+		t.Fatalf("SNI must default to host: %s", link)
 	}
-	for in, want := range cases {
-		if got := sniFromMasquerade(in); got != want {
-			t.Fatalf("sni(%q): want %q got %q", in, want, got)
-		}
+}
+
+func TestSniOverrideViaPanelConfig(t *testing.T) {
+	pc := &config.PanelConfig{Port: 443, Obfs: false, SNI: "cdn.custom.com"}
+	link := BuildLink("u", "p", "vpn.example.com", pc)
+	if !strings.Contains(link, "sni=cdn.custom.com") {
+		t.Fatalf("SNI override lost: %s", link)
 	}
 }
 
