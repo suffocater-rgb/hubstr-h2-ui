@@ -91,3 +91,17 @@ MIT, см. [LICENSE](LICENSE).
 - ✅ Мутационные тесты (gremlins): **100 % efficacy** по всем 4 пакетам (`store`, `auth`, `hysteria`, `server`)
 
 См. [TESTING.md](TESTING.md) для подробного отчёта и [qa/checklist.md](qa/checklist.md) для pre-release процедуры.
+
+## GitHub Actions (опционально)
+
+Файл CI лежит в `docs/ci.yml.example`. Чтобы включить автоматические тесты и релизы при пуше тега:
+
+```bash
+mkdir -p .github/workflows
+cp docs/ci.yml.example .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+git commit -m "ci: enable GitHub Actions"
+git push
+```
+
+(нужен токен со scope `workflow`, поэтому не включаем по умолчанию)
