@@ -1,0 +1,105 @@
+=== PACKAGE: auth ===
+Starting...
+Gathering coverage... done in 725.778024ms
+      KILLED CONDITIONALS_NEGATION at auth.go:32:65
+      KILLED ARITHMETIC_BASE at auth.go:60:21
+      KILLED CONDITIONALS_NEGATION at auth.go:57:9
+      KILLED ARITHMETIC_BASE at auth.go:60:15
+      KILLED ARITHMETIC_BASE at auth.go:63:20
+      KILLED ARITHMETIC_BASE at auth.go:63:14
+      KILLED ARITHMETIC_BASE at auth.go:75:25
+      KILLED ARITHMETIC_BASE at auth.go:75:19
+      KILLED CONDITIONALS_NEGATION at auth.go:72:16
+      KILLED CONDITIONALS_NEGATION at auth.go:83:9
+      KILLED CONDITIONALS_NEGATION at auth.go:87:45
+       LIVED CONDITIONALS_BOUNDARY at auth.go:90:23
+      KILLED CONDITIONALS_NEGATION at auth.go:90:23
+      KILLED CONDITIONALS_NEGATION at auth.go:93:11
+      KILLED CONDITIONALS_NEGATION at auth.go:107:77
+      KILLED CONDITIONALS_NEGATION at auth.go:118:10
+      KILLED CONDITIONALS_NEGATION at auth.go:122:9
+
+Mutation testing completed in 4 seconds 562 milliseconds
+Killed: 16, Lived: 1, Not covered: 0
+Timed out: 0, Not viable: 0, Skipped: 0
+Test efficacy: 94.12%
+Mutator coverage: 100.00%
+
+=== PACKAGE: hysteria ===SStarting...
+Gathering coverage... done in 6.341295808s
+      KILLED ARITHMETIC_BASE at hysteria.go:38:68
+      KILLED CONDITIONALS_NEGATION at hysteria.go:39:9
+      KILLED CONDITIONALS_NEGATION at hysteria.go:42:14
+      KILLED CONDITIONALS_NEGATION at hysteria.go:46:9
+      KILLED CONDITIONALS_NEGATION at hysteria.go:50:21
+      KILLED CONDITIONALS_NEGATION at hysteria.go:55:57
+      KILLED CONDITIONALS_NEGATION at hysteria.go:64:9
+      KILLED ARITHMETIC_BASE at hysteria.go:67:69
+      KILLED CONDITIONALS_NEGATION at hysteria.go:68:9
+       LIVED ARITHMETIC_BASE at hysteria.go:33:97
+      KILLED CONDITIONALS_NEGATION at hysteria.go:75:9
+      KILLED CONDITIONALS_NEGATION at hysteria.go:79:25
+      KILLED ARITHMETIC_BASE at hysteria.go:79:20
+      KILLED ARITHMETIC_BASE at hysteria.go:87:68
+      KILLED CONDITIONALS_NEGATION at hysteria.go:88:9
+       LIVED CONDITIONALS_NEGATION at hysteria.go:71:14
+      KILLED CONDITIONALS_NEGATION at hysteria.go:95:9
+      KILLED CONDITIONALS_NEGATION at hysteria.go:99:21
+      KILLED CONDITIONALS_NEGATION at hysteria.go:103:57
+ NOT COVERED CONDITIONALS_NEGATION at hysteria.go:112:9
+       LIVED CONDITIONALS_NEGATION at hysteria.go:91:14
+       LIVED CONDITIONALS_NEGATION at hysteria.go:123:9
+      KILLED CONDITIONALS_NEGATION at hysteria.go:124:8
+      KILLED CONDITIONALS_NEGATION at hysteria.go:129:7
+      KILLED CONDITIONALS_BOUNDARY at hysteria.go:137:7
+      KILLED CONDITIONALS_NEGATION at hysteria.go:137:7
+      KILLED CONDITIONALS_NEGATION at hysteria.go:141:9
+
+Mutation testing completed in 38 seconds 22 milliseconds
+Killed: 22, Lived: 4, Not covered: 1
+Timed out: 0, Not viable: 0, Skipped: 0
+Test efficacy: 84.62%
+Mutator coverage: 96.30%
+
+=== PACKAGE: server ===
+      KILLED CONDITIONALS_NEGATION at server.go:438:12
+      KILLED CONDITIONALS_NEGATION at server.go:438:26
+      KILLED CONDITIONALS_BOUNDARY at server.go:438:26
+      KILLED CONDITIONALS_NEGATION at server.go:442:12
+      KILLED CONDITIONALS_BOUNDARY at server.go:442:12
+      KILLED CONDITIONALS_NEGATION at server.go:442:24
+       LIVED CONDITIONALS_BOUNDARY at server.go:442:24
+       LIVED CONDITIONALS_BOUNDARY at server.go:442:38
+      KILLED CONDITIONALS_NEGATION at server.go:442:38
+       LIVED CONDITIONALS_BOUNDARY at server.go:442:50
+      KILLED CONDITIONALS_NEGATION at server.go:442:50
+      KILLED CONDITIONALS_NEGATION at server.go:442:64
+       LIVED CONDITIONALS_BOUNDARY at server.go:442:64
+      KILLED CONDITIONALS_NEGATION at server.go:442:76
+       LIVED CONDITIONALS_BOUNDARY at server.go:442:76
+      KILLED CONDITIONALS_NEGATION at server.go:442:89
+      KILLED CONDITIONALS_NEGATION at server.go:442:101
+      KILLED CONDITIONALS_NEGATION at server.go:454:9
+      KILLED CONDITIONALS_NEGATION at server.go:442:113
+      KILLED CONDITIONALS_NEGATION at server.go:459:46
+ NOT COVERED CONDITIONALS_BOUNDARY at server.go:470:22
+ NOT COVERED CONDITIONALS_NEGATION at server.go:470:22
+ NOT COVERED CONDITIONALS_NEGATION at server.go:470:43
+ NOT COVERED CONDITIONALS_NEGATION at server.go:482:11
+ NOT COVERED CONDITIONALS_BOUNDARY at server.go:489:13
+ NOT COVERED CONDITIONALS_NEGATION at server.go:489:13
+ NOT COVERED INVERT_NEGATIVES at server.go:490:17
+ NOT COVERED ARITHMETIC_BASE at server.go:490:17
+ NOT COVERED CONDITIONALS_BOUNDARY at server.go:492:13
+ NOT COVERED CONDITIONALS_NEGATION at server.go:492:13
+ NOT COVERED INVERT_NEGATIVES at server.go:493:17
+ NOT COVERED ARITHMETIC_BASE at server.go:493:17
+ NOT COVERED CONDITIONALS_NEGATION at server.go:513:9
+       LIVED CONDITIONALS_NEGATION at server.go:463:36
+
+Mutation testing completed in 3 minutes 16 seconds
+Killed: 55, Lived: 11, Not covered: 16
+Timed out: 0, Not viable: 0, Skipped: 0
+Test efficacy: 83.33%
+Mutator coverage: 80.49%
+
