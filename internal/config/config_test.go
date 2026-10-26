@@ -120,8 +120,11 @@ func TestApplyPreservesUnmanagedKeys(t *testing.T) {
 	if root["listen"] != ":8443" {
 		t.Fatalf("listen: %v", root["listen"])
 	}
-	if root["masquerade"] != "https://example.org" {
-		t.Fatalf("masq: %v", root["masquerade"])
+	// v2.13+: masquerade записывается как объект {type: proxy, proxy: {url, rewriteHost}}
+	if m, ok := root["masquerade"].(map[string]any); !ok || m["type"] != "proxy" {
+		t.Fatalf("masq must be object with type=proxy, got %v", root["masquerade"])
+	} else if px, ok := m["proxy"].(map[string]any); !ok || px["url"] != "https://example.org" {
+		t.Fatalf("masq proxy.url mismatch: %v", m)
 	}
 	auth := root["auth"].(map[string]any)
 	up := auth["userpass"].(map[string]any)

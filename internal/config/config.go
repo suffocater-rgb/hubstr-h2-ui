@@ -72,6 +72,15 @@ func LoadPanelConfig(path string) (*PanelConfig, error) {
 	}
 	if m, ok := root["masquerade"].(string); ok && m != "" {
 		p.Masquerade = m
+	} else if m, ok := root["masquerade"].(map[string]any); ok {
+		// v2.13+ объект: { type: proxy, proxy: { url, rewriteHost } }
+		if t, ok := m["type"].(string); ok && t == "proxy" {
+			if px, ok := m["proxy"].(map[string]any); ok {
+				if url, ok := px["url"].(string); ok && url != "" {
+					p.Masquerade = url
+				}
+			}
+		}
 	}
 	p.Users = map[string]string{}
 	if auth, ok := root["auth"].(map[string]any); ok {
@@ -109,7 +118,14 @@ func (p *PanelConfig) ApplyTo(path string) error {
 		delete(root, "obfs")
 	}
 	if p.Masquerade != "" {
-		root["masquerade"] = p.Masquerade
+		// v2.13+ требует объект; рендерим как proxy + url
+		root["masquerade"] = map[string]any{
+			"type": "proxy",
+			"proxy": map[string]any{
+				"url":         p.Masquerade,
+				"rewriteHost": true,
+			},
+		}
 	}
 	if len(p.Users) > 0 {
 		auth, _ := root["auth"].(map[string]any)
@@ -127,10 +143,33 @@ func (p *PanelConfig) ApplyTo(path string) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+	if err := os.WriteFile(tmp, out, 0o660); err != nil {
 		return err
 	}
+	// hysteria работает от не-root юзера и должен читать конфиг; даём группе read
+	_ = os.Chmod(tmp, 0o660)
+	if gid, err := lookupHysteriaGID(); err == nil {
+		_ = os.Chown(tmp, 0, gid)
+	}
 	return os.Rename(tmp, path)
+}
+
+// lookupHysteriaGID резолвит gid системного юзера hysteria, если он есть.
+// На системах без такого юзера (в тестах) вернёт ошибку и chown пропустится.
+func lookupHysteriaGID() (int, error) {
+	out, err := os.ReadFile("/etc/group")
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		parts := strings.Split(line, ":")
+		if len(parts) >= 3 && parts[0] == "hysteria" {
+			if gid, err := strconv.Atoi(parts[2]); err == nil {
+				return gid, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("no hysteria group")
 }
 
 // ValidatePort checks port bounds (it is used by REST validation too).
