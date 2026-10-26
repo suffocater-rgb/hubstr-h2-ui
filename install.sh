@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # h2-ui one-liner installer:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/suffocater-rgb/h2-ui/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/suffocater-rgb/hubstr-h2-ui/main/install.sh)
 #
 # Installs Hysteria 2 (official), downloads the latest h2-ui release,
 # creates both systemd units and prints the panel URL + admin credentials.
 set -euo pipefail
 
-REPO="${H2UI_REPO:-suffocater-rgb/h2-ui}"
+REPO="${H2UI_REPO:-suffocater-rgb/hubstr-h2-ui}"
 PANEL_PORT="${H2UI_PORT:-2053}"
 HY_PORT="${H2UI_HYSTERIA_PORT:-443}"
 INSTALL_DIR=/etc/h2-ui
