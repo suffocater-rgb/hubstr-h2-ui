@@ -18,7 +18,7 @@
 ## Установка (одна команда)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/USER/h2-ui/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/suffocater-rgb/h2-ui/main/install.sh)
 ```
 
 Скрипт:
