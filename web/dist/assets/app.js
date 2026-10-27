@@ -31,6 +31,36 @@ function fmtBytes(n){
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function rnd(n){ let s=''; const a='abcdefghijklmnopqrstuvwxyz0123456789'; for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 
+// ============ Clipboard helper — работает и на HTTP и на HTTPS ============
+// navigator.clipboard.writeText() запрещён на insecure context (http://) в
+// современных браузерах — silent fail. Fallback: hidden textarea + execCommand('copy').
+function copyTextToClipboard(text){
+  // 1) Современный API clipboard
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(()=>fallbackCopy(text));
+  }
+  // 2) Fallback: textarea + execCommand — работает всегда, даже на http
+  return fallbackCopy(text);
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly','');
+  ta.style.position = 'absolute';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  // select() должен быть sync с user gesture — поэтому не async
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch(e) { ok = false; }
+  document.body.removeChild(ta);
+  if (!ok) return Promise.reject(new Error('copy failed'));
+  return Promise.resolve();
+}
+
 window.addEventListener('hashchange', ()=>{ S.route = location.hash.slice(2)||'dashboard'; render(); });
 
 function loginView(){
@@ -252,19 +282,20 @@ window.uMassAdd = async () => {
   const n = parseInt(prompt('Сколько создать? (1-50)', '5'), 10);
   if(!n || n < 1 || n > 50) return;
   let ok = 0, err = 0;
-  const created = [];
+  const createdLinks = [];
   for(let i = 1; i <= n; i++){
     const name = `${prefix}${i}`;
     const pass = rnd(12);
     try{
       await api('/users', {method:'POST', body: JSON.stringify({username:name, password:pass})});
-      created.push(`${name}:${pass}`);
+      const link = await api('/link?user='+encodeURIComponent(name));
+      createdLinks.push(link.link);
       ok++;
     }catch(e){ err++; }
   }
-  if(created.length){
-    document.getElementById('u-link-title').textContent = `Создано ${created.length} клиентов (user:pass)`;
-    document.getElementById('u-link-text').value = created.join('\n');
+  if(createdLinks.length){
+    document.getElementById('u-link-title').textContent = `Создано ${createdLinks.length} клиентов (share links)`;
+    document.getElementById('u-link-text').value = createdLinks.join('\n');
     document.getElementById('u-link-modal').style.display = 'flex';
   }
   toast(`Создано: ${ok}${err?` | ошибок/дубликатов: ${err}`:''}`);
@@ -303,9 +334,11 @@ window.uShowLink = async (name) => {
 window.uCopyLink = async (name) => {
   try{
     const d = await api('/link?user='+encodeURIComponent(name));
-    await navigator.clipboard.writeText(d.link);
-    toast(`Ссылка ${name} скопирована`);
-  }catch(e){ toast(e.message, true); }
+    await copyTextToClipboard(d.link);
+    toast(`Ссылка ${name} скопирована в буфер`);
+  }catch(e){ 
+    toast(`Ошибка копирования: ${e.message}`, true); 
+  }
 };
 
 window.uEditPass = async (name) => {
