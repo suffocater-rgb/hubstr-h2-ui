@@ -46,18 +46,28 @@ function fallbackCopy(text){
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.setAttribute('readonly','');
-  ta.style.position = 'absolute';
-  ta.style.left = '-9999px';
+  // Safari/iOS отказывается копировать из невидимого/заэкранного элемента —
+  // держим элемент непрозрачным, но вне видимости, внутри viewport
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '0';
+  ta.style.width = '2px';
+  ta.style.height = '2px';
+  ta.style.padding = '0';
+  ta.style.border = 'none';
+  ta.style.outline = 'none';
+  ta.style.boxShadow = 'none';
+  ta.style.background = 'transparent';
   document.body.appendChild(ta);
-  // select() должен быть sync с user gesture — поэтому не async
+  ta.focus();
   ta.select();
   ta.setSelectionRange(0, text.length);
-  let ok = false;
+  let ok;
   try {
     ok = document.execCommand('copy');
   } catch(e) { ok = false; }
   document.body.removeChild(ta);
-  if (!ok) return Promise.reject(new Error('copy failed'));
+  if (!ok) return Promise.reject(new Error('execCommand copy вернул false (браузер заблокировал)'));
   return Promise.resolve();
 }
 
@@ -176,7 +186,7 @@ function users(){
         <h3 id="u-link-title">Ссылка</h3>
         <textarea id="u-link-text" readonly onclick="this.select()" rows="3"></textarea>
         <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-          <button onclick="uCopyShownLink()">Копировать</button>
+          <button id="u-copy-btn" onclick="uCopyShownLink(this)">Копировать</button>
           <button class="ghost" onclick="uCloseModal()">Закрыть</button>
         </div>
       </div>
@@ -389,10 +399,21 @@ window.uBulk = async (action) => {
 };
 
 window.uCloseModal = () => { document.getElementById('u-link-modal').style.display = 'none'; };
-window.uCopyShownLink = async () => {
+window.uCopyShownLink = async (btn) => {
   const t = document.getElementById('u-link-text');
-  await navigator.clipboard.writeText(t.value);
-  toast('Скопировано');
+  try{
+    await copyTextToClipboard(t.value);
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = '✅ Скопировано';
+      btn.style.background = 'var(--ok)';
+      setTimeout(()=>{ btn.textContent = original; btn.style.background = ''; }, 1800);
+    } else {
+      toast('Скопировано в буфер');
+    }
+  }catch(e){
+    toast('Ошибка копирования: ' + e.message, true);
+  }
 };
 
 /* ============== CONFIG ============== */
