@@ -85,6 +85,15 @@ auth:
 trafficStats:
   listen: 127.0.0.1:9999
   secret: ${TRAFFIC_SECRET}
+
+# Force IPv4-only egress: hysteria по умолчанию может брать :: для целевой,
+# и на хостах без IPv6 это валится с network is unreachable -> вечный спиннер
+# в клиенте. Поэтому зашимаем direct outbound в mode=4 (v4 only).
+outbounds:
+  - name: v4-only
+    type: direct
+    direct:
+      mode: 4
 EOF2
 
 # Self-signed TLS cert если нет
