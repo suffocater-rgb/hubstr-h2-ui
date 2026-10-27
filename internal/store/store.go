@@ -227,6 +227,19 @@ func (st *Store) AddTraffic(name string, tx, rx uint64) {
 	}
 }
 
+// ResetTraffic zeroes up/down counters for one user. No-op for unknown user.
+func (st *Store) ResetTraffic(name string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	u, ok := st.s.Users[name]
+	if !ok {
+		return ErrUserNotFound
+	}
+	u.Up = 0
+	u.Down = 0
+	return st.saveLocked()
+}
+
 // Settings / SetSettings ------------------------------------------------
 
 func (st *Store) Settings() PanelSettings {

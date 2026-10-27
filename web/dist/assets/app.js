@@ -1,4 +1,4 @@
-/* h2-ui SPA — dependency-free router + views */
+/* h2-ui SPA — dashboard, users (3x-ui style), config, logs */
 (function(){
 const S = { token: localStorage.getItem('h2ui_token') || '', route: location.hash.slice(2) || 'dashboard' };
 
@@ -29,6 +29,7 @@ function fmtBytes(n){
   return n.toFixed(n>=100?0:n>=10?1:2)+' '+u[i];
 }
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function rnd(n){ let s=''; const a='abcdefghijklmnopqrstuvwxyz0123456789'; for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 
 window.addEventListener('hashchange', ()=>{ S.route = location.hash.slice(2)||'dashboard'; render(); });
 
@@ -55,7 +56,7 @@ function layout(content){
     <h1><b>h2</b>-ui</h1>
     <nav>
       <a href="#/dashboard" class="${r==='dashboard'?'on':''}">Дашборд</a>
-      <a href="#/users" class="${r==='users'?'on':''}">Пользователи</a>
+      <a href="#/users" class="${r==='users'?'on':''}">Клиенты</a>
       <a href="#/config" class="${r==='config'?'on':''}">Сервер</a>
       <a href="#/logs" class="${r==='logs'?'on':''}">Логи</a>
       <a href="#" onclick="localStorage.removeItem('h2ui_token');location.reload();return false">Выход</a>
@@ -64,16 +65,15 @@ function layout(content){
   <main id="main">${content}</main>`;
 }
 
-/* ---- views ---- */
-
+/* ============== DASHBOARD ============== */
 function dashboard(){
   return api('/summary').then(s=>{
     layout(`
       <h2>Дашборд</h2>
       <div class="cards">
         <div class="card"><div class="k">Сервис</div><div class="v"><span class="dot ${s.status==='active'?'on':'off'}"></span>${esc(s.status)}</div></div>
-        <div class="card"><div class="k">Пользователи</div><div class="v">${s.usersEnabled}/${s.usersTotal}</div></div>
-        <div class="card"><div class="k">Онлайн сейчас</div><div class="v">${s.onlineTotal}</div></div>
+        <div class="card"><div class="k">Клиенты</div><div class="v">${s.usersEnabled}/${s.usersTotal}</div></div>
+        <div class="card"><div class="k">Онлайн</div><div class="v">${s.onlineTotal}</div></div>
         <div class="card"><div class="k">Трафик ↑</div><div class="v">${fmtBytes(s.trafficUp)}</div></div>
         <div class="card"><div class="k">Трафик ↓</div><div class="v">${fmtBytes(s.trafficDown)}</div></div>
       </div>
@@ -88,76 +88,302 @@ function dashboard(){
 window.svc = a => api('/service',{method:'POST',body:JSON.stringify({action:a})})
   .then(()=>toast('OK: '+a)).catch(e=>toast(e.message,true));
 
+/* ============== USERS (3x-ui style) ============== */
+const U = {
+  all: [],
+  sel: new Set(),
+  filterQ: '',
+  filterStatus: '',
+  online: {}
+};
+
 function users(){
-  return api('/users').then(list=>{
-    const rows = list.map(u=>`
-      <tr>
-        <td>${u.id}</td>
-        <td>${esc(u.username)}</td>
-        <td><span class="badge ${u.enabled?'on':'off'}">${u.enabled?'вкл':'выкл'}</span></td>
-        <td>↑ ${fmtBytes(u.up)} / ↓ ${fmtBytes(u.down)}</td>
-        <td>${new Date(u.createdAt).toLocaleDateString()}</td>
-        <td>
-          <button class="sm" onclick="linkFor('${esc(u.username)}')">Ссылка</button>
-          <button class="sm ghost" onclick="toggleUser('${esc(u.username)}',${!u.enabled})">${u.enabled?'Выкл':'Вкл'}</button>
-          <button class="sm ghost" onclick="resetPw('${esc(u.username)}')">Пароль</button>
-          <button class="sm ghost" onclick="kickUser('${esc(u.username)}')">Кик</button>
-          <button class="sm danger" onclick="delUser('${esc(u.username)}')">Удалить</button>
-        </td>
-      </tr>`).join('');
-    layout(`
-      <div class="bar"><h2>Пользователи</h2>
-        <div style="display:flex;gap:8px;width:340px">
-          <input id="nu" placeholder="имя пользователя">
-          <input id="np" placeholder="пароль">
-          <button onclick="addUser()">Добавить</button>
+  layout(`<h2>Клиенты</h2>
+    <div id="u-stats" class="stats-row"></div>
+
+    <div class="toolbar">
+      <input id="u-add-name" placeholder="Имя клиента" style="width:170px">
+      <input id="u-add-pass" placeholder="Пароль (пусто = случайный)" style="width:200px">
+      <button onclick="uAdd()">+ Добавить клиента</button>
+      <button class="ghost" onclick="uMassAdd()">Массовое добавление</button>
+      <button class="ghost" onclick="uResetTraffic()">Сбросить трафик всех</button>
+    </div>
+
+    <div class="filters">
+      <input id="u-q" placeholder="Поиск по имени..." oninput="uFilter(this.value)" style="width:260px">
+      <select onchange="uFilterStatus(this.value)">
+        <option value="">Все</option>
+        <option value="enabled">Активные</option>
+        <option value="disabled">Выключенные</option>
+        <option value="online">В сети</option>
+        <option value="offline">Не в сети</option>
+      </select>
+    </div>
+
+    <table class="u-table">
+      <thead><tr>
+        <th style="width:32px"><input type="checkbox" id="u-sel-all" onclick="uToggleSelAll()"></th>
+        <th style="width:56px">Вкл</th>
+        <th style="width:100px">Статус</th>
+        <th>Клиент</th>
+        <th class="t-right">Трафик ↑</th>
+        <th class="t-right">Трафик ↓</th>
+        <th class="t-right" style="width:200px">Действия</th>
+        <th class="t-right" style="width:90px">Создан</th>
+      </tr></thead>
+      <tbody id="u-tbody"><tr><td colspan="8" class="muted" style="padding:20px;text-align:center">Загрузка…</td></tr></tbody>
+    </table>
+
+    <div id="u-bulk" class="bulk-bar">
+      <span><b id="u-bulk-cnt">0</b> выбрано</span>
+      <button onclick="uBulk('enable')">Включить</button>
+      <button onclick="uBulk('disable')">Выключить</button>
+      <button class="danger" onclick="uBulk('delete')">Удалить</button>
+    </div>
+
+    <div id="u-link-modal" class="modal">
+      <div class="modal-content">
+        <h3 id="u-link-title">Ссылка</h3>
+        <textarea id="u-link-text" readonly onclick="this.select()" rows="3"></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button onclick="uCopyShownLink()">Копировать</button>
+          <button class="ghost" onclick="uCloseModal()">Закрыть</button>
         </div>
       </div>
-      <table><thead><tr><th>#</th><th>Имя</th><th>Статус</th><th>Трафик</th><th>Создан</th><th></th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="6" class="muted">Пока пусто</td></tr>'}</tbody></table>
-      <div id="linkbox" style="margin-top:14px"></div>`);
+    </div>`);
+  uLoad();
+}
+
+function uLoad(){
+  return Promise.all([api('/users'), api('/summary')]).then(([list, s])=>{
+    U.all = list;
+    U.online = s.online || {};
+    renderUStats(s);
+    renderUTable();
+  }).catch(e=>toast(e.message,true));
+}
+
+function renderUStats(s){
+  document.getElementById('u-stats').innerHTML = `
+    <div class="stat"><label>Клиенты</label><value>${s.usersTotal}</value></div>
+    <div class="stat"><label>Онлайн</label><value class="ok">${s.onlineTotal}</value></div>
+    <div class="stat"><label>Активные</label><value class="ok">${s.usersEnabled}</value></div>
+    <div class="stat"><label>Выключенные</label><value class="muted">${s.usersTotal - s.usersEnabled}</value></div>
+    <div class="stat"><label>Трафик ↑</label><value>${fmtBytes(s.trafficUp)}</value></div>
+    <div class="stat"><label>Трафик ↓</label><value>${fmtBytes(s.trafficDown)}</value></div>`;
+}
+
+function uFiltered(){
+  return U.all.filter(u => {
+    if(U.filterQ && !u.username.toLowerCase().includes(U.filterQ)) return false;
+    if(U.filterStatus === 'enabled'  && !u.enabled) return false;
+    if(U.filterStatus === 'disabled' &&  u.enabled) return false;
+    if(U.filterStatus === 'online'   && !U.online[u.username]) return false;
+    if(U.filterStatus === 'offline'  &&  U.online[u.username]) return false;
+    return true;
   });
 }
-window.addUser = ()=> api('/users',{method:'POST',body:JSON.stringify({username:nu.value,password:np.value})})
-  .then(()=>{toast('Создан');users();}).catch(e=>toast(e.message,true));
-window.delUser = n => confirm('Удалить '+n+'?') && api('/users/'+encodeURIComponent(n),{method:'DELETE'})
-  .then(()=>{toast('Удалён');users();}).catch(e=>toast(e.message,true));
-window.toggleUser = (n,en)=> api('/users/'+encodeURIComponent(n),{method:'PUT',body:JSON.stringify({enabled:en})})
-  .then(()=>users()).catch(e=>toast(e.message,true));
-window.resetPw = n=>{
-  const p = prompt('Новый пароль для '+n+' (мин 4 символа)');
-  if(!p) return;
-  api('/users/'+encodeURIComponent(n),{method:'PUT',body:JSON.stringify({password:p})})
-    .then(()=>toast('Пароль обновлён')).catch(e=>toast(e.message,true));
-};
-window.kickUser = n=> api('/users/'+encodeURIComponent(n)+'/kick',{method:'POST'})
-  .then(()=>toast('Кикнут')).catch(e=>toast(e.message,true));
-window.linkFor = n=> api('/link?user='+encodeURIComponent(n)).then(d=>{
-  document.getElementById('linkbox').innerHTML = `
-    <div class="card">
-      <div class="k muted">Ссылка подключения для ${esc(n)}</div>
-      <div class="copybox" style="margin-top:8px">
-        <input readonly value="${esc(d.link)}" id="lnkin">
-        <button class="sm" onclick="navigator.clipboard.writeText(document.getElementById('lnkin').value);toast('Скопировано')">Копировать</button>
-      </div>
-    </div>`;
-}).catch(e=>toast(e.message,true));
 
+function renderUTable(){
+  const tb = document.getElementById('u-tbody');
+  const list = uFiltered();
+
+  if(list.length === 0){
+    tb.innerHTML = '<tr><td colspan="8" class="muted" style="padding:30px;text-align:center">Клиентов нет. Добавьте первого ↑</td></tr>';
+    updateBulkBar();
+    return;
+  }
+
+  tb.innerHTML = list.map(u => {
+    const on = !!U.online[u.username];
+    return `<tr class="${U.sel.has(u.username)?'row-selected':''}">
+      <td><input type="checkbox" ${U.sel.has(u.username)?'checked':''} onchange="uToggleSel('${esc(u.username)}')"></td>
+      <td><label class="sw"><input type="checkbox" ${u.enabled?'checked':''} onchange="uToggleEnabled('${esc(u.username)}', this.checked)"><span></span></label></td>
+      <td>${on ? '<span class="pill pill-on">В сети</span>' : '<span class="pill pill-off">Не в сети</span>'}</td>
+      <td><div class="u-name">${esc(u.username)}</div><div class="u-pass">${esc(u.password)}</div></td>
+      <td class="t-right">${fmtBytes(u.up)}</td>
+      <td class="t-right">${fmtBytes(u.down)}</td>
+      <td class="t-right">
+        <button class="iconbtn" title="Показать ссылку" onclick="uShowLink('${esc(u.username)}')">🔗</button>
+        <button class="iconbtn" title="Копировать ссылку" onclick="uCopyLink('${esc(u.username)}')">📋</button>
+        <button class="iconbtn" title="Смена пароля" onclick="uEditPass('${esc(u.username)}')">✏️</button>
+        ${on ? `<button class="iconbtn" title="Кикнуть" onclick="uKick('${esc(u.username)}')">⚡</button>` : ''}
+        <button class="iconbtn danger" title="Удалить" onclick="uDelete('${esc(u.username)}')">🗑</button>
+      </td>
+      <td class="muted t-right">${new Date(u.createdAt).toLocaleDateString()}</td>
+    </tr>`;
+  }).join('');
+
+  updateBulkBar();
+}
+
+function updateBulkBar(){
+  const bar = document.getElementById('u-bulk');
+  bar.style.display = U.sel.size > 0 ? 'flex' : 'none';
+  document.getElementById('u-bulk-cnt').textContent = U.sel.size;
+}
+
+window.uToggleSel = (name) => { if(U.sel.has(name)) U.sel.delete(name); else U.sel.add(name); renderUTable(); };
+window.uToggleSelAll = () => {
+  const list = uFiltered();
+  if(U.sel.size === list.length && list.length > 0){ U.sel.clear(); } else { U.sel = new Set(list.map(u => u.username)); }
+  renderUTable();
+};
+window.uFilter = (q) => { U.filterQ = q.toLowerCase(); renderUTable(); };
+window.uFilterStatus = (s) => { U.filterStatus = s; renderUTable(); };
+
+window.uAdd = async () => {
+  const name = document.getElementById('u-add-name').value.trim();
+  let pass  = document.getElementById('u-add-pass').value;
+  if(!name){ toast('Введите имя клиента', true); return }
+  if(!pass) pass = rnd(12);
+  try{
+    await api('/users', {method:'POST', body: JSON.stringify({username:name, password:pass})});
+    document.getElementById('u-add-name').value = '';
+    document.getElementById('u-add-pass').value = '';
+    toast(`${name} добавлен`);
+    uLoad();
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uMassAdd = async () => {
+  const prefix = prompt('Префикс имени (напр. user):', 'user');
+  if(!prefix) return;
+  const n = parseInt(prompt('Сколько создать? (1-50)', '5'), 10);
+  if(!n || n < 1 || n > 50) return;
+  let ok = 0, err = 0;
+  const created = [];
+  for(let i = 1; i <= n; i++){
+    const name = `${prefix}${i}`;
+    const pass = rnd(12);
+    try{
+      await api('/users', {method:'POST', body: JSON.stringify({username:name, password:pass})});
+      created.push(`${name}:${pass}`);
+      ok++;
+    }catch(e){ err++; }
+  }
+  if(created.length){
+    document.getElementById('u-link-title').textContent = `Создано ${created.length} клиентов (user:pass)`;
+    document.getElementById('u-link-text').value = created.join('\n');
+    document.getElementById('u-link-modal').style.display = 'flex';
+  }
+  toast(`Создано: ${ok}${err?` | ошибок/дубликатов: ${err}`:''}`);
+  uLoad();
+};
+
+window.uResetTraffic = async () => {
+  if(!confirm('Сбросить счётчики трафика у ВСЕХ клиентов?')) return;
+  try{
+    await api('/users/reset-traffic', {method:'POST'});
+    toast('Счётчики сброшены');
+    uLoad();
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uToggleEnabled = async (name, enabled) => {
+  try{
+    await api('/users/'+encodeURIComponent(name), {method:'PUT', body: JSON.stringify({enabled})});
+    const u = U.all.find(x => x.username === name);
+    if(u) u.enabled = enabled;
+    api('/summary').then(renderUStats);
+    renderUTable();
+    toast(enabled ? `${name}: включён` : `${name}: выключен`);
+  }catch(e){ toast(e.message, true); renderUTable(); }
+};
+
+window.uShowLink = async (name) => {
+  try{
+    const d = await api('/link?user='+encodeURIComponent(name));
+    document.getElementById('u-link-title').textContent = `Ссылка: ${name}`;
+    document.getElementById('u-link-text').value = d.link;
+    document.getElementById('u-link-modal').style.display = 'flex';
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uCopyLink = async (name) => {
+  try{
+    const d = await api('/link?user='+encodeURIComponent(name));
+    await navigator.clipboard.writeText(d.link);
+    toast(`Ссылка ${name} скопирована`);
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uEditPass = async (name) => {
+  const np = prompt(`Новый пароль для ${name} (мин 4 символа):`);
+  if(!np) return;
+  try{
+    await api('/users/'+encodeURIComponent(name), {method:'PUT', body: JSON.stringify({password: np})});
+    toast('Пароль обновлён');
+    uLoad();
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uKick = async (name) => {
+  try{
+    await api('/users/'+encodeURIComponent(name)+'/kick', {method:'POST'});
+    toast(`${name} кикнут`);
+    setTimeout(uLoad, 800);
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uDelete = async (name) => {
+  if(!confirm(`Удалить ${name}?`)) return;
+  try{
+    await api('/users/'+encodeURIComponent(name), {method:'DELETE'});
+    toast(`${name} удалён`);
+    U.sel.delete(name);
+    uLoad();
+  }catch(e){ toast(e.message, true); }
+};
+
+window.uBulk = async (action) => {
+  if(U.sel.size === 0) return;
+  const n = U.sel.size;
+  const verbs = { enable:'включить', disable:'выключить', delete:'УДАЛИТЬ' };
+  if(!confirm(`Действие: ${verbs[action]} для ${n} клиентов?`)) return;
+  let ok = 0, err = 0;
+  for(const name of U.sel){
+    try{
+      if(action === 'delete')       await api('/users/'+encodeURIComponent(name), {method:'DELETE'});
+      else if(action === 'enable')  await api('/users/'+encodeURIComponent(name), {method:'PUT', body: JSON.stringify({enabled:true})});
+      else if(action === 'disable') await api('/users/'+encodeURIComponent(name), {method:'PUT', body: JSON.stringify({enabled:false})});
+      ok++;
+    }catch(e){ err++; }
+  }
+  toast(`OK: ${ok}${err?` | ошибок: ${err}`:''}`);
+  U.sel.clear();
+  uLoad();
+};
+
+window.uCloseModal = () => { document.getElementById('u-link-modal').style.display = 'none'; };
+window.uCopyShownLink = async () => {
+  const t = document.getElementById('u-link-text');
+  await navigator.clipboard.writeText(t.value);
+  toast('Скопировано');
+};
+
+/* ============== CONFIG ============== */
 function configView(){
   return Promise.all([api('/config'), api('/summary')]).then(([c,s])=>{
     layout(`
       <h2>Сервер</h2>
       <div class="card">
         <div class="row">
+          <div><label>Домен панели (host в ссылках)</label><input id="cfg-domain" value="${esc(s.domain||'')}"></div>
           <div><label>Порт (listen)</label><input id="cport" type="number" value="${c.port}"></div>
-          <div><label>Masquerade URL</label><input id="cmasq" value="${esc(c.masquerade||'')}"></div>
         </div>
         <div class="row">
+          <div><label>Masquerade URL</label><input id="cmasq" value="${esc(c.masquerade||'')}"></div>
           <div><label>Obfs (salamander)</label>
             <select id="cobfs"><option value="1" ${c.obfs?'selected':''}>вкл</option><option value="0" ${!c.obfs?'selected':''}>выкл</option></select></div>
+        </div>
+        <div class="row">
           <div><label>Obfs пароль</label><input id="cobfspw" value="${esc(c.obfsPassword||'')}"></div>
         </div>
-        <button style="margin-top:14px" onclick="saveCfg()">Сохранить и перезапустить</button>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button onclick="saveCfg()">Сохранить и перезапустить</button>
+          <button class="ghost" onclick="saveDomain()">Сохранить домен</button>
+        </div>
       </div>
       <h2 style="margin-top:20px">Сервис</h2>
       <div class="card">
@@ -174,13 +400,17 @@ window.saveCfg = ()=> api('/config',{method:'PUT',body:JSON.stringify({
   port:+cport.value, masquerade:cmasq.value,
   obfs:cobfs.value==='1', obfsPassword:cobfspw.value
 })}).then(()=>toast('Применено, сервис перезапущен')).catch(e=>toast(e.message,true));
+window.saveDomain = ()=> api('/settings',{method:'PUT',body:JSON.stringify({domain:document.getElementById('cfg-domain').value})})
+  .then(()=>toast('Домен сохранён')).catch(e=>toast(e.message,true));
 
+/* ============== LOGS ============== */
 function logs(){
   return api('/logs?n=120').then(d=>{
     layout(`<h2>Логи hysteria-server</h2><pre>${esc((d.lines||[]).join('\n') || 'нет данных')}</pre>`);
   }).catch(e=>layout(`<h2>Логи</h2><div class="card">${esc(e.message)}</div>`));
 }
 
+/* ============== BOOT ============== */
 function render(){
   if(!S.token){ loginView(); return; }
   ({dashboard, users, config:configView, logs}[S.route] || dashboard)();

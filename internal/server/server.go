@@ -65,11 +65,12 @@ func (s *Server) routes() {
 
 	protected := http.NewServeMux()
 	protected.HandleFunc("/api/summary", s.handleSummary)
-	protected.HandleFunc("/api/users", s.handleUsers)       // GET list, POST create
-	protected.HandleFunc("/api/users/", s.handleUser)       // GET/PUT/DELETE /api/users/{name}, POST /api/users/{name}/kick
-	protected.HandleFunc("/api/config", s.handleConfig)     // GET/PUT
-	protected.HandleFunc("/api/service", s.handleService)   // POST {action}
-	protected.HandleFunc("/api/settings", s.handleSettings) // GET/PUT
+	protected.HandleFunc("/api/users/reset-traffic", s.handleResetTraffic) // POST — должен идти ДО /api/users/
+	protected.HandleFunc("/api/users", s.handleUsers)                      // GET list, POST create
+	protected.HandleFunc("/api/users/", s.handleUser)                      // GET/PUT/DELETE /api/users/{name}, POST /api/users/{name}/kick
+	protected.HandleFunc("/api/config", s.handleConfig)                    // GET/PUT
+	protected.HandleFunc("/api/service", s.handleService)                  // POST {action}
+	protected.HandleFunc("/api/settings", s.handleSettings)                // GET/PUT
 	protected.HandleFunc("/api/logs", s.handleLogs)
 	protected.HandleFunc("/api/link", s.handleLink) // GET ?user=name
 
@@ -155,7 +156,25 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		"trafficDown":  down,
 		"online":       online,
 		"onlineTotal":  len(online),
+		"domain":       s.o.Store.Settings().Domain,
 	})
+}
+
+// handleResetTraffic clears up/down counters for every user.
+func (s *Server) handleResetTraffic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	users := s.o.Store.ListUsers()
+	for _, u := range users {
+		// UpdateUser mutates the copy, so we mutate counters via direct API:
+		// Store doesn't have a counter-reset helper, we do it here in-line by
+		// re-using AddTraffic with negative deltas is wrong — instead use a
+		// dedicated reset on the store.
+		_ = s.o.Store.ResetTraffic(u.Username)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "traffic reset", "count": strconv.Itoa(len(users))})
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
