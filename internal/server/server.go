@@ -499,6 +499,11 @@ func (s *Server) RunTrafficPoller(ctx context.Context) {
 				log.Printf("traffic poll: %v", err)
 				continue
 			}
+			// Hysteria приводит имя к lower case; маппим обратно к case в store.
+			byLower := map[string]string{}
+			for _, u := range s.o.Store.ListUsers() {
+				byLower[strings.ToLower(u.Username)] = u.Username
+			}
 			for name, e := range cur {
 				prev := last[name]
 				dtx, drx := e.Tx, e.Rx
@@ -508,7 +513,11 @@ func (s *Server) RunTrafficPoller(ctx context.Context) {
 				if e.Rx >= prev.Rx {
 					drx = e.Rx - prev.Rx
 				}
-				s.o.Store.AddTraffic(name, dtx, drx)
+				realName := name
+				if orig, ok := byLower[strings.ToLower(name)]; ok {
+					realName = orig
+				}
+				s.o.Store.AddTraffic(realName, dtx, drx)
 			}
 			// counters reset for users that disappeared (server restart)
 			for name := range last {
