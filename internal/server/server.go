@@ -148,6 +148,23 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 			online = o
 		}
 	}
+	// Hysteria приводит userpass auth к lowercase, а в store имена могут быть
+	// с mixed case (Art). Нормализуем online к регистру store.
+	{
+		byLower := make(map[string]string, len(users))
+		for _, u := range users {
+			byLower[strings.ToLower(u.Username)] = u.Username
+		}
+		normalized := make(map[string]int, len(online))
+		for name, count := range online {
+			if orig, ok := byLower[strings.ToLower(name)]; ok {
+				normalized[orig] = count
+			} else {
+				normalized[name] = count
+			}
+		}
+		online = normalized
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       hysteria.ServiceStatus(),
 		"usersTotal":   len(users),
