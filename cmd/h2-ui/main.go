@@ -20,7 +20,7 @@ import (
 	"h2-ui/internal/systemd"
 )
 
-const version = "0.2.3"
+const version = "0.2.4"
 
 func main() {
 	var (

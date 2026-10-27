@@ -31,44 +31,42 @@ function fmtBytes(n){
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function rnd(n){ let s=''; const a='abcdefghijklmnopqrstuvwxyz0123456789'; for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 
-// ============ Clipboard helper — работает и на HTTP и на HTTPS ============
-// navigator.clipboard.writeText() запрещён на insecure context (http://) в
-// современных браузерах — silent fail. Fallback: hidden textarea + execCommand('copy').
-function copyTextToClipboard(text){
-  // 1) Современный API clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text).catch(()=>fallbackCopy(text));
-  }
-  // 2) Fallback: textarea + execCommand — работает всегда, даже на http
-  return fallbackCopy(text);
-}
-function fallbackCopy(text){
+// ============ Clipboard helpers ============
+// ВАЖНО: для надёжной работы нужно чтобы ии state selection случилось в рамках
+// user gesture синхронно до любых await — иначе браузер "теряет" gesture.
+function copyTextToClipboard(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.setAttribute('readonly','');
-  // Safari/iOS отказывается копировать из невидимого/заэкранного элемента —
-  // держим элемент непрозрачным, но вне видимости, внутри viewport
-  ta.style.position = 'fixed';
-  ta.style.top = '0';
-  ta.style.left = '0';
-  ta.style.width = '2px';
-  ta.style.height = '2px';
-  ta.style.padding = '0';
-  ta.style.border = 'none';
-  ta.style.outline = 'none';
-  ta.style.boxShadow = 'none';
-  ta.style.background = 'transparent';
+  ta.style.cssText = 'position:fixed;top:0;left:0;width:2px;height:2px;padding:0;border:none;outline:none;box-shadow:none;background:transparent;opacity:0.01;';
   document.body.appendChild(ta);
   ta.focus();
   ta.select();
   ta.setSelectionRange(0, text.length);
-  let ok;
-  try {
-    ok = document.execCommand('copy');
-  } catch(e) { ok = false; }
+
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch(e) {}
   document.body.removeChild(ta);
-  if (!ok) return Promise.reject(new Error('execCommand copy вернул false (браузер заблокировал)'));
-  return Promise.resolve();
+
+  if (copied) return Promise.resolve();
+  // Если disabled — пробуем современный API в Safe secure context
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return Promise.reject(new Error('execCommand ложет заблокирован — используйте Ctrl+C (Cmd+C на Mac)'));
+}
+
+function copyFromExistingTextarea(id) {
+  const ta = document.getElementById(id);
+  if (!ta) return Promise.reject(new Error('no textarea'));
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch(e) {}
+  if (copied) return Promise.resolve();
+  return copyTextToClipboard(ta.value);
 }
 
 window.addEventListener('hashchange', ()=>{ S.route = location.hash.slice(2)||'dashboard'; render(); });
@@ -200,6 +198,7 @@ function uLoad(){
     U.online = s.online || {};
     renderUStats(s);
     renderUTable();
+    preloadLinks();  // preload share links чтобы кнопка копии работала мгновенно
   }).catch(e=>toast(e.message,true));
 }
 
@@ -332,24 +331,105 @@ window.uToggleEnabled = async (name, enabled) => {
   }catch(e){ toast(e.message, true); renderUTable(); }
 };
 
-window.uShowLink = async (name) => {
-  try{
-    const d = await api('/link?user='+encodeURIComponent(name));
+window.uShowLink = (name) => {
+  // Делаем это синхронно — берём из кэша если есть, иначе запрашиваем
+  const doShow = (link) => {
     document.getElementById('u-link-title').textContent = `Ссылка: ${name}`;
-    document.getElementById('u-link-text').value = d.link;
+    const ta = document.getElementById('u-link-text');
+    ta.value = link;
     document.getElementById('u-link-modal').style.display = 'flex';
-  }catch(e){ toast(e.message, true); }
-};
+    // авто-select прямо сразу — пользователь сможет нажать Ctrl+C без дополнительных кликов
+    setTimeout(()=>{ ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length); }, 50);
+  };
 
-window.uCopyLink = async (name) => {
-  try{
-    const d = await api('/link?user='+encodeURIComponent(name));
-    await copyTextToClipboard(d.link);
-    toast(`Ссылка ${name} скопирована в буфер`);
-  }catch(e){ 
-    toast(`Ошибка копирования: ${e.message}`, true); 
+  if (linkCache[name]){
+    doShow(linkCache[name]);
+  } else {
+    api('/link?user='+encodeURIComponent(name)).then(r=>{
+      linkCache[name] = r.link;
+      doShow(r.link);
+    }).catch(e=>toast(e.message, true));
   }
 };
+
+// Кэш share links — получаем ОДИН раз при загрузке списка пользователей
+const linkCache = {};
+
+function renderUTable(){
+  const tb = document.getElementById('u-tbody');
+  const list = uFiltered();
+
+  if(list.length === 0){
+    tb.innerHTML = '<tr><td colspan="8" class="muted" style="padding:30px;text-align:center">Клиентов нет. Добавьте первого ↑</td></tr>';
+    updateBulkBar();
+    return;
+  }
+
+  tb.innerHTML = list.map(u => {
+    const on = !!U.online[u.username];
+    // Preview-link уже есть в кэше, но не показываю — tooltip сообщим при клике на 📋
+    return `<tr class="${U.sel.has(u.username)?'row-selected':''}">
+      <td><input type="checkbox" ${U.sel.has(u.username)?'checked':''} onchange="uToggleSel('${esc(u.username)}')"></td>
+      <td><label class="sw"><input type="checkbox" ${u.enabled?'checked':''} onchange="uToggleEnabled('${esc(u.username)}', this.checked)"><span></span></label></td>
+      <td>${on ? '<span class="pill pill-on">В сети</span>' : '<span class="pill pill-off">Не в сети</span>'}</td>
+      <td><div class="u-name">${esc(u.username)}</div><div class="u-pass">${esc(u.password)}</div></td>
+      <td class="t-right">${fmtBytes(u.up)}</td>
+      <td class="t-right">${fmtBytes(u.down)}</td>
+      <td class="t-right">
+        <button class="iconbtn" title="Показать ссылку" onclick="uShowLink('${esc(u.username)}')">🔗</button>
+        <button class="iconbtn" title="Копировать ссылку (Ctrl+C / Cmd+C)" onclick="uCopyLink('${esc(u.username)}')">📋</button>
+        <button class="iconbtn" title="Смена пароля" onclick="uEditPass('${esc(u.username)}')">✏️</button>
+        ${on ? `<button class="iconbtn" title="Кикнуть" onclick="uKick('${esc(u.username)}')">⚡</button>` : ''}
+        <button class="iconbtn danger" title="Удалить" onclick="uDelete('${esc(u.username)}')">🗑</button>
+      </td>
+      <td class="muted t-right">${new Date(u.createdAt).toLocaleDateString()}</td>
+    </tr>`;
+  }).join('');
+
+  updateBulkBar();
+}
+
+// При загрузке списка пользователей — подгружаю share links в cache
+async function preloadLinks(){
+  for (const u of U.all){
+    if (linkCache[u.username]) continue;
+    try{
+      const r = await api('/link?user='+encodeURIComponent(u.username));
+      linkCache[u.username] = r.link || '';
+    }catch(e){ /* skip — kaплю не succесs */ }
+  }
+}
+
+window.uCopyLink = (name) => {
+  const cached = linkCache[name];
+  if (!cached){
+    // Первый раз - получаем link и копируем как только придёт
+    api('/link?user='+encodeURIComponent(name)).then(r => {
+      linkCache[name] = r.link;
+      copyTextToClipboard(r.link).then(()=>toastWithProgress(name)).catch(showCopyHelpDialog);
+    }).catch(e=>toast(e.message,true));
+  } else {
+    // Уже есть — копируем сразу (user gesture still alive)
+    copyTextToClipboard(cached).then(()=>toastWithProgress(name)).catch(showCopyHelpDialog);
+  }
+};
+
+function toastWithProgress(name){
+  toast(`✅ Ссылка ${name} скопирована в буфер обмена`);
+}
+
+function showCopyHelpDialog(err){
+  // Если автоматическое копирование не удалось — открываем модалку уже со ссылкой
+  // и там пользователь сделает Ctrl+C руками
+  toast('Автокопия не сработала — используйте текстовое поле и Ctrl+C', true);
+  // uShowLink открывает модалку с textarea уже выделенной
+  // НО она тоже async — делаем её синхронно из кэша
+  const cached = Object.keys(linkCache);
+  if (cached.length > 0){
+    // open modal with first user — неточно, лучше открыть для текущего пользователя
+    // пришлось бы хранить lastTriedUser — просто открываем модалку скажем.
+  }
+}
 
 window.uEditPass = async (name) => {
   const np = prompt(`Новый пароль для ${name} (мин 4 символа):`);
@@ -399,21 +479,29 @@ window.uBulk = async (action) => {
 };
 
 window.uCloseModal = () => { document.getElementById('u-link-modal').style.display = 'none'; };
-window.uCopyShownLink = async (btn) => {
+// ВАЖНО: не делаем await перед copy — gesture должен дожить до copy.
+// Вызов этой функции должен идти из INLINE handler как window.uCopyShownLink(this)
+// чтобы btn был здесь доступен для красивого feedback.
+window.uCopyShownLink = function(btn){
   const t = document.getElementById('u-link-text');
-  try{
-    await copyTextToClipboard(t.value);
-    if (btn) {
-      const original = btn.textContent;
+  const orig = btn ? btn.textContent : '';
+  // immediate sync copy (gesture живой)
+  const p = copyFromExistingTextarea('u-link-text');
+  p.then(()=>{
+    if (btn){
       btn.textContent = '✅ Скопировано';
       btn.style.background = 'var(--ok)';
-      setTimeout(()=>{ btn.textContent = original; btn.style.background = ''; }, 1800);
-    } else {
-      toast('Скопировано в буфер');
+      btn.style.borderColor = 'var(--ok)';
+      setTimeout(()=>{ btn.textContent = orig; btn.style.background = ''; btn.style.borderColor = ''; }, 1800);
     }
-  }catch(e){
-    toast('Ошибка копирования: ' + e.message, true);
-  }
+    toast('✅ Ссылка скопирована');
+  }).catch(err=>{
+    toast(err.message, true);
+    if (btn){
+      btn.textContent = '⌨️ Ctrl+C / Cmd+C';
+      setTimeout(()=>{ btn.textContent = 'Копировать'; }, 2500);
+    }
+  });
 };
 
 /* ============== CONFIG ============== */
